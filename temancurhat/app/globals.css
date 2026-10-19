@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
 }
 
 @theme inline {
@@ -12,15 +12,33 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background-color: #f8fafc;
+  color: #1e293b;
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.font-arabic {
+  font-family: "Amiri", "Traditional Arabic", "Scheherazade New", "Lateef", "Noto Naskh Arabic", serif;
+  line-height: 2.2;
 }
+
+/* Custom warm glow and light card effects */
+.radial-emerald-glow {
+  background: radial-gradient(circle at 50% 20%, rgba(16, 185, 129, 0.08) 0%, rgba(20, 184, 166, 0.03) 45%, transparent 70%);
+}
+
+.card-friendly {
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-friendly:hover {
+  border-color: rgba(52, 211, 153, 0.5);
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.1), 0 8px 10px -6px rgba(16, 185, 129, 0.06);
+  transform: translateY(-2px);
+}
+
+

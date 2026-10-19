@@ -1,4 +1,13 @@
 {
+  "name": "temancurhat-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix temancurhat",
+    "build": "npm run build --prefix temancurhat",
+    "start": "npm run start --prefix temancurhat",
+    "lint": "npm run lint --prefix temancurhat"
+  },
   "dependencies": {
     "@google/genai": "^2.30.0",
     "lucide-react": "^1.59.0",
