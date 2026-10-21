@@ -243,6 +243,7 @@ export interface BKChatMessage {
   senderName: string;
   text: string;
   timestamp: string;
+  isAutoReply?: boolean;
 }
 
 export const initialTeachersBK: TeacherBK[] = [

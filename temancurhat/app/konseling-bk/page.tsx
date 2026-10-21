@@ -15,15 +15,10 @@ import {
   CheckCircle2,
   Clock,
   MapPin,
-  Sparkles,
   ExternalLink,
-  ChevronRight,
   Smile,
   Copy,
   Check,
-  AlertCircle,
-  HelpCircle,
-  PhoneCall,
 } from "lucide-react";
 import {
   initialTeachersBK,
@@ -77,7 +72,6 @@ function KonselingBKContent() {
   // Chat State
   const [chatMessages, setChatMessages] = useState<BKChatMessage[]>([]);
   const [inputChatMessage, setInputChatMessage] = useState("");
-  const [isTeacherTyping, setIsTeacherTyping] = useState(false);
 
   // Appointment Form State
   const [appointmentLocation, setAppointmentLocation] = useState(APPOINTMENT_LOCATIONS[0]);
@@ -95,118 +89,176 @@ function KonselingBKContent() {
     }
   }, [initialTab]);
 
-  // Muat riwayat live chat untuk guru terpilih dari localStorage
-  useEffect(() => {
-    if (selectedTeacher) {
-      const storageKey = `temancurhat_bk_chat_${selectedTeacher.id}`;
-      try {
-        const stored = localStorage.getItem(storageKey);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setChatMessages(parsed);
+  // Helper default welcome message
+  const getDefaultWelcome = (teacher: TeacherBK, sId: string): BKChatMessage => ({
+    id: `greet-${teacher.id}`,
+    sessionId: `session-${sId}`,
+    senderRole: "teacher",
+    senderName: teacher.name,
+    text: `Halo ananda (${sId})! Saya ${teacher.name}. Ruang chat ini 100% aman, privat, dan rahasia. Ceritakan apa pun yang sedang kamu rasakan atau hadapi di sekolah maupun media sosial. Saya siap mendengarkan dan mencari solusi bersama.`,
+    timestamp: getFormattedTime(),
+    isAutoReply: false,
+  });
+
+  // Muat riwayat live chat dari Server API + fallback LocalStorage
+  const fetchChatMessages = async (currentTeacher = selectedTeacher, currentStudentId = studentId) => {
+    if (!currentTeacher || !currentStudentId) return;
+    const defaultMsg = getDefaultWelcome(currentTeacher, currentStudentId);
+
+    try {
+      const res = await fetch(
+        `/api/bk-chat?teacherId=${encodeURIComponent(currentTeacher.id)}&studentId=${encodeURIComponent(currentStudentId)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.messages)) {
+          if (data.messages.length > 0) {
+            setChatMessages([defaultMsg, ...data.messages]);
+            const storageKey = `temancurhat_bk_chat_${currentTeacher.id}`;
+            localStorage.setItem(storageKey, JSON.stringify([defaultMsg, ...data.messages]));
             return;
           }
         }
-      } catch (e) {
-        console.warn(e);
       }
-
-      // Default welcome message dari Guru BK terpilih
-      setChatMessages([
-        {
-          id: `greet-${selectedTeacher.id}`,
-          sessionId: `session-${studentId}`,
-          senderRole: "teacher",
-          senderName: selectedTeacher.name,
-          text: `Halo ananda (${studentId})! Saya ${selectedTeacher.name}. Ruang chat ini 100% anonim dan rahasia. Jangan sungkan menceritakan apa yang sedang kamu rasakan atau alami. Ibu/Bapak siap menemani dan mendengarkan.`,
-          timestamp: getFormattedTime(),
-        },
-      ]);
+    } catch (err) {
+      console.warn("Gagal fetch dari API, mencoba fallback localStorage:", err);
     }
+
+    // Fallback LocalStorage
+    try {
+      const storageKey = `temancurhat_bk_chat_${currentTeacher.id}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChatMessages(parsed);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+
+    // Default sambutan hangat Guru BK
+    setChatMessages([defaultMsg]);
+  };
+
+  // Muat chat saat guru atau siswa berganti
+  useEffect(() => {
+    fetchChatMessages(selectedTeacher, studentId);
   }, [selectedTeacher, studentId]);
 
-  // Simpan chat ke localStorage setiap berubah
+  // Sinkronisasi real-time pesan dari Dashboard Guru BK (Polling + BroadcastChannel + Storage Event)
   useEffect(() => {
-    if (selectedTeacher && chatMessages.length > 0) {
-      const storageKey = `temancurhat_bk_chat_${selectedTeacher.id}`;
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(chatMessages));
+    if (!selectedTeacher || !studentId) return;
 
-        // Update juga ke all_sessions agar dashboard BK bisa memantau
-        const allSessionsKey = "temancurhat_bk_all_sessions";
-        const storedSessions = localStorage.getItem(allSessionsKey);
-        let sessions = storedSessions ? JSON.parse(storedSessions) : [];
-        const lastMsg = chatMessages[chatMessages.length - 1];
+    // Polling interval 1.5s agar sinkron antar tab / browser
+    const interval = setInterval(() => {
+      fetchChatMessages(selectedTeacher, studentId);
+    }, 1500);
 
-        const existingIndex = sessions.findIndex(
-          (s: any) => s.teacherId === selectedTeacher.id && s.studentId === studentId
-        );
-
-        const sessionItem = {
-          sessionId: `session-${studentId}`,
-          studentId: studentId,
-          teacherId: selectedTeacher.id,
-          teacherName: selectedTeacher.name,
-          lastMessage: lastMsg.text,
-          lastUpdated: lastMsg.timestamp,
-        };
-
-        if (existingIndex >= 0) {
-          sessions[existingIndex] = sessionItem;
-        } else {
-          sessions.unshift(sessionItem);
+    // BroadcastChannel untuk update instan (0ms) pada tab yang sama
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel("temancurhat_bk_sync");
+      channel.onmessage = (event) => {
+        if (
+          event.data?.type === "NEW_MESSAGE" &&
+          event.data?.teacherId === selectedTeacher.id
+        ) {
+          fetchChatMessages(selectedTeacher, studentId);
         }
-        localStorage.setItem(allSessionsKey, JSON.stringify(sessions));
-      } catch (e) {
-        console.warn(e);
-      }
+      };
+    } catch (e) {
+      console.warn(e);
     }
-  }, [chatMessages, selectedTeacher, studentId]);
 
-  // Kirim pesan chat murid ke guru BK
-  const handleSendChatMessage = (e: React.FormEvent) => {
+    // Storage event listener
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === `temancurhat_bk_chat_${selectedTeacher.id}`) {
+        fetchChatMessages(selectedTeacher, studentId);
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      clearInterval(interval);
+      if (channel) channel.close();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [selectedTeacher, studentId]);
+
+  // Kirim pesan chat murid ke guru BK (ASLI KE GURU, TIDAK DIBALAS BOT/AI)
+  const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = inputChatMessage.trim();
-    if (!text || isTeacherTyping) return;
+    if (!text) return;
 
+    const currentTime = getFormattedTime();
     const newMsg: BKChatMessage = {
       id: `std-${Date.now()}`,
       sessionId: `session-${studentId}`,
       senderRole: "student",
       senderName: studentId,
       text,
-      timestamp: getFormattedTime(),
+      timestamp: currentTime,
+      isAutoReply: false,
     };
 
+    // Update state murid langsung (optimistic update)
     const updated = [...chatMessages, newMsg];
     setChatMessages(updated);
     setInputChatMessage("");
-    setIsTeacherTyping(true);
 
-    // Simulasi respons otomatis ramah dari Guru BK setelah 2.5 detik
-    setTimeout(() => {
-      const teacherResponses = [
-        `Terima kasih ya sudah berani menceritakan hal ini ke ${selectedTeacher.name.includes("Siti") ? "Ibu" : "Bapak"}. Perasaan sedih atau tertekan yang kamu rasakan itu wajar, dan kamu sama sekali tidak bersalah. Coba tarik napas perlahan ya. Apa kamu punya bukti tangkapan layar ejekan tersebut?`,
-        `Ibu/Bapak mengerti sekali betapa tidak nyamannya berada di posisi kamu saat ini. Ketahuilah bahwa kamu tidak sendirian. Kita bisa cari jalan keluar bersama secara bertahap tanpa membuatmu merasa tertekan di kelas.`,
-        `Langkahmu untuk mencari bantuan hari ini adalah keputusan yang sangat bijak dan dewasa. Jangan biarkan komentar-komentar itu meragukan kebaikan dirimu. Kalau kamu merasa nyaman, kita juga bisa jadwalkan waktu untuk ngobrol santai langsung ya.`,
-      ];
+    // Simpan ke localStorage cadangan
+    const storageKey = `temancurhat_bk_chat_${selectedTeacher.id}`;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+    } catch (err) {
+      console.warn(err);
+    }
 
-      const replyText =
-        teacherResponses[Math.floor(Math.random() * teacherResponses.length)];
+    // Kirim ke server API agar masuk ke antrean Dashboard Guru BK
+    try {
+      const res = await fetch("/api/bk-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherId: selectedTeacher.id,
+          teacherName: selectedTeacher.name,
+          studentId: studentId,
+          senderRole: "student",
+          senderName: studentId,
+          text,
+          timestamp: currentTime,
+        }),
+      });
 
-      const teacherReply: BKChatMessage = {
-        id: `tch-${Date.now()}`,
-        sessionId: `session-${studentId}`,
-        senderRole: "teacher",
-        senderName: selectedTeacher.name,
-        text: replyText,
-        timestamp: getFormattedTime(),
-      };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.messages)) {
+          const defaultMsg = getDefaultWelcome(selectedTeacher, studentId);
+          const merged = [defaultMsg, ...data.messages];
+          setChatMessages(merged);
+          localStorage.setItem(storageKey, JSON.stringify(merged));
+        }
+      }
 
-      setChatMessages((prev) => [...prev, teacherReply]);
-      setIsTeacherTyping(false);
-    }, 2500);
+      // Notifikasi ke tab lain secara instan via BroadcastChannel
+      try {
+        const ch = new BroadcastChannel("temancurhat_bk_sync");
+        ch.postMessage({
+          type: "NEW_MESSAGE",
+          teacherId: selectedTeacher.id,
+          studentId: studentId,
+        });
+        ch.close();
+      } catch (e) {
+        console.warn(e);
+      }
+    } catch (err) {
+      console.error("Gagal mengirim pesan chat murid ke server:", err);
+    }
   };
 
   // Submit Booking Tatap Muka
@@ -473,15 +525,34 @@ function KonselingBKContent() {
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-gradient-to-b from-white to-emerald-50/20">
               {chatMessages.map((msg) => {
                 const isStudent = msg.senderRole === "student";
+                const isGreeting = msg.id.startsWith("greet-");
 
                 return (
                   <div
                     key={msg.id}
                     className={`flex flex-col ${isStudent ? "items-end" : "items-start"}`}
                   >
-                    <span className="text-[10px] font-semibold text-slate-400 mb-1 px-1">
-                      {isStudent ? studentId : selectedTeacher.name} &bull; {msg.timestamp}
-                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 mb-1 px-1">
+                      <span>{isStudent ? studentId : selectedTeacher.name}</span>
+                      <span>&bull;</span>
+                      <span>{msg.timestamp}</span>
+                      {isStudent && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-teal-50 text-teal-700 font-bold border border-teal-200">
+                          Kamu (Murid Anonim)
+                        </span>
+                      )}
+                      {!isStudent && isGreeting && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                          Sambutan Konselor
+                        </span>
+                      )}
+                      {!isStudent && !isGreeting && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-black border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                          <Check className="w-2.5 h-2.5 text-emerald-600" />
+                          Tanggapan Asli Guru BK
+                        </span>
+                      )}
+                    </div>
                     <div
                       className={`max-w-[85%] sm:max-w-md p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed rounded-2xl ${
                         isStudent
@@ -495,19 +566,34 @@ function KonselingBKContent() {
                 );
               })}
 
-              {/* Indikator Guru Mengetik */}
-              {isTeacherTyping && (
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-bold text-emerald-700 mb-1 px-1">
-                    {selectedTeacher.name} sedang mengetik...
-                  </span>
-                  <div className="p-3 rounded-2xl rounded-tl-none bg-white border border-emerald-100 shadow-xs flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce [animation-delay:-0.3s]" />
-                    <span className="w-2 h-2 rounded-full bg-teal-400 animate-bounce [animation-delay:-0.15s]" />
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-bounce" />
+              {/* Status Menunggu Tanggapan Guru BK (Jika pesan terakhir dari murid) */}
+              {chatMessages.length > 0 &&
+                chatMessages[chatMessages.length - 1]?.senderRole === "student" && (
+                  <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-xs text-amber-900 space-y-1.5 shadow-xs animate-in fade-in">
+                    <div className="flex items-start gap-2.5">
+                      <Clock className="w-4 h-4 text-amber-600 animate-pulse mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-bold">
+                          Pesanmu telah terkirim langsung ke {selectedTeacher.name}.
+                        </p>
+                        <p className="text-[11px] text-amber-800 mt-0.5">
+                          Tanggapan akan diberikan langsung oleh Guru BK secara manual (bukan AI). Hasil tanggapan akan otomatis tampil di layar ini.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
+                      <span className="text-amber-700 font-medium">Beri tanggapan via Guru BK:</span>
+                      <Link
+                        href="/dashboard-bk"
+                        target="_blank"
+                        className="font-bold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1"
+                      >
+                        <span>Buka Dashboard Guru BK (Balas Pesan)</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
 
             {/* Input Form Chat */}
@@ -519,13 +605,12 @@ function KonselingBKContent() {
                 type="text"
                 value={inputChatMessage}
                 onChange={(e) => setInputChatMessage(e.target.value)}
-                placeholder={`Tulis pesanmu ke ${selectedTeacher.name.split(",")[0]}...`}
-                disabled={isTeacherTyping}
+                placeholder={`Tulis pesan atau pertanyaanmu ke ${selectedTeacher.name.split(",")[0]}...`}
                 className="flex-1 px-3.5 py-2.5 text-xs sm:text-sm rounded-xl bg-slate-50 border border-slate-200 focus:border-emerald-500 outline-none text-slate-900 placeholder:text-slate-400"
               />
               <button
                 type="submit"
-                disabled={!inputChatMessage.trim() || isTeacherTyping}
+                disabled={!inputChatMessage.trim()}
                 className="p-2.5 sm:px-4 sm:py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 text-white disabled:text-slate-400 font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-xs"
               >
                 <span className="hidden sm:inline text-xs">Kirim</span>

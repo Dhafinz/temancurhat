@@ -264,6 +264,34 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+
+          {/* Trained AI Feature Callout Banner */}
+          <div className="mt-8 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-200/80 shadow-xs max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 rounded-2xl bg-emerald-600 text-white shrink-0 shadow-md shadow-emerald-600/20">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] sm:text-xs font-extrabold border border-emerald-200">
+                  <span>Baru: TemanCurhat AI Terlatih</span>
+                </div>
+                <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
+                  Dilatih Khusus Mengenai Bullying, Hadits Islam, Dampak, Solusi &amp; Kasus Viral
+                </h4>
+                <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">
+                  Tanyakan dalil adab medsos (QS. Al-Hujurat: 11, Hadits Muflis), analisis kasus viral di Indonesia, hingga tonton video edukasi resmi langsung di aplikasi.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/curhat-ai"
+              className="shrink-0 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+            >
+              <span>Coba AI Chatbot</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
         </div>
       </section>
 
